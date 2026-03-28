@@ -14,9 +14,7 @@ const CATEGORIES = [
 
 const PRIORITY_COLORS = { low: '#6ec47e', medium: '#e8b84a', high: '#e85d5d' }
 const PRIORITY_ORDER  = { high: 0, medium: 1, low: 2 }
-
-const NOTE_COLORS = ['#2a2438', '#1e2d38', '#1e3228', '#2d2218', '#2d1e2e']
-const NOTE_COLOR_LABELS = ['Purple', 'Blue', 'Green', 'Amber', 'Pink']
+const NOTE_COLORS     = ['#2a2438', '#1e2d38', '#1e3228', '#2d2218', '#2d1e2e']
 
 function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
@@ -51,7 +49,6 @@ function getGreeting() {
   return 'Good evening'
 }
 
-// ─── Shared task form ────────────────────────────────────────────────────────
 function TaskForm({ title, setTitle, desc, setDesc, priority, setPriority,
   category, setCategory, dueDate, setDueDate, onSubmit, submitLabel, titleRef }) {
   return (
@@ -91,20 +88,19 @@ function TaskForm({ title, setTitle, desc, setDesc, priority, setPriority,
 }
 
 export default function App() {
-  // ── view: 'tasks' | 'notes' ──────────────────────────────────────────────
   const [view, setView] = useState('tasks')
 
-  // ── tasks ────────────────────────────────────────────────────────────────
+  // tasks
   const [tasks, setTasks] = useState(() => {
     try { return JSON.parse(localStorage.getItem(TASK_KEY)) || [] } catch { return [] }
   })
   const [activeCategory, setActiveCategory] = useState('all')
-  const [searchQuery, setSearchQuery]   = useState('')
+  const [searchQuery, setSearchQuery]     = useState('')
   const [showCompleted, setShowCompleted] = useState(true)
-  const [sortBy, setSortBy]             = useState('created')
-  const [detailTask, setDetailTask]     = useState(null)   // clicked task detail
-  const [showAddTask, setShowAddTask]   = useState(false)
-  const [editTask, setEditTask]         = useState(null)
+  const [sortBy, setSortBy]               = useState('created')
+  const [selectedTask, setSelectedTask]   = useState(null)   // shown in right panel
+  const [showAddTask, setShowAddTask]     = useState(false)
+  const [editTask, setEditTask]           = useState(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState(null)
 
   const [newTitle, setNewTitle]       = useState('')
@@ -122,27 +118,24 @@ export default function App() {
   const addTitleRef  = useRef(null)
   const editTitleRef = useRef(null)
 
-  // ── notes ────────────────────────────────────────────────────────────────
+  // notes
   const [notes, setNotes] = useState(() => {
     try { return JSON.parse(localStorage.getItem(NOTE_KEY)) || [] } catch { return [] }
   })
-  const [showAddNote, setShowAddNote]   = useState(false)
-  const [editNote, setEditNote]         = useState(null)
-  const [detailNote, setDetailNote]     = useState(null)
+  const [showAddNote, setShowAddNote]       = useState(false)
+  const [editNote, setEditNote]             = useState(null)
+  const [selectedNote, setSelectedNote]     = useState(null)
   const [confirmDeleteNote, setConfirmDeleteNote] = useState(null)
-
-  const [noteTitle, setNoteTitle]   = useState('')
-  const [noteBody, setNoteBody]     = useState('')
-  const [noteColor, setNoteColor]   = useState(0)
+  const [noteTitle, setNoteTitle] = useState('')
+  const [noteBody, setNoteBody]   = useState('')
+  const [noteColor, setNoteColor] = useState(0)
   const noteTitleRef = useRef(null)
 
-  // ── persist ──────────────────────────────────────────────────────────────
   useEffect(() => { localStorage.setItem(TASK_KEY, JSON.stringify(tasks)) }, [tasks])
   useEffect(() => { localStorage.setItem(NOTE_KEY, JSON.stringify(notes)) }, [notes])
-
-  useEffect(() => { if (showAddTask && addTitleRef.current) addTitleRef.current.focus() }, [showAddTask])
-  useEffect(() => { if (editTask   && editTitleRef.current) editTitleRef.current.focus() }, [editTask])
-  useEffect(() => { if (showAddNote && noteTitleRef.current) noteTitleRef.current.focus() }, [showAddNote])
+  useEffect(() => { if (showAddTask  && addTitleRef.current)  addTitleRef.current.focus()  }, [showAddTask])
+  useEffect(() => { if (editTask     && editTitleRef.current) editTitleRef.current.focus() }, [editTask])
+  useEffect(() => { if (showAddNote  && noteTitleRef.current) noteTitleRef.current.focus() }, [showAddNote])
 
   // ── task actions ─────────────────────────────────────────────────────────
   const openAddTask = () => {
@@ -153,11 +146,12 @@ export default function App() {
 
   const addTask = () => {
     if (!newTitle.trim()) return
-    setTasks(prev => [{
+    const t = {
       id: generateId(), title: newTitle.trim(), text: newDesc.trim(),
       completed: false, priority: newPriority, category: newCategory,
       dueDate: newDueDate || null, createdAt: new Date().toISOString(),
-    }, ...prev])
+    }
+    setTasks(prev => [t, ...prev])
     setShowAddTask(false)
   }
 
@@ -172,69 +166,53 @@ export default function App() {
 
   const saveEditTask = () => {
     if (!editTitle.trim()) return
-    setTasks(prev => prev.map(t => t.id === editTask.id
-      ? { ...t, title: editTitle.trim(), text: editDesc.trim(),
-          priority: editPriority, category: editCategory, dueDate: editDueDate || null }
-      : t))
-    // refresh detail if open
-    setDetailTask(prev => prev?.id === editTask.id
-      ? { ...prev, title: editTitle.trim(), text: editDesc.trim(),
-          priority: editPriority, category: editCategory, dueDate: editDueDate || null }
-      : prev)
+    const updated = { ...editTask, title: editTitle.trim(), text: editDesc.trim(),
+      priority: editPriority, category: editCategory, dueDate: editDueDate || null }
+    setTasks(prev => prev.map(t => t.id === editTask.id ? updated : t))
+    if (selectedTask?.id === editTask.id) setSelectedTask(updated)
     setEditTask(null)
   }
 
-  const toggleTask = id =>
+  const toggleTask = id => {
     setTasks(prev => prev.map(t => t.id === id ? { ...t, completed: !t.completed } : t))
+    if (selectedTask?.id === id) setSelectedTask(prev => ({ ...prev, completed: !prev.completed }))
+  }
 
   const doDeleteTask = () => {
     setTasks(prev => prev.filter(t => t.id !== confirmDeleteId))
-    if (detailTask?.id === confirmDeleteId) setDetailTask(null)
+    if (selectedTask?.id === confirmDeleteId) setSelectedTask(null)
     setConfirmDeleteId(null)
   }
 
   const clearCompleted = () => setTasks(prev => prev.filter(t => !t.completed))
 
   // ── note actions ─────────────────────────────────────────────────────────
-  const openAddNote = () => {
-    setNoteTitle(''); setNoteBody(''); setNoteColor(0)
-    setShowAddNote(true)
-  }
+  const openAddNote = () => { setNoteTitle(''); setNoteBody(''); setNoteColor(0); setShowAddNote(true) }
 
   const addNote = () => {
     if (!noteTitle.trim()) return
-    setNotes(prev => [{
-      id: generateId(), title: noteTitle.trim(), body: noteBody.trim(),
-      color: noteColor, createdAt: new Date().toISOString(),
-    }, ...prev])
+    setNotes(prev => [{ id: generateId(), title: noteTitle.trim(), body: noteBody.trim(),
+      color: noteColor, createdAt: new Date().toISOString() }, ...prev])
     setShowAddNote(false)
   }
 
-  const openEditNote = note => {
-    setEditNote(note)
-    setNoteTitle(note.title)
-    setNoteBody(note.body)
-    setNoteColor(note.color)
-  }
+  const openEditNote = note => { setEditNote(note); setNoteTitle(note.title); setNoteBody(note.body); setNoteColor(note.color) }
 
   const saveEditNote = () => {
     if (!noteTitle.trim()) return
-    setNotes(prev => prev.map(n => n.id === editNote.id
-      ? { ...n, title: noteTitle.trim(), body: noteBody.trim(), color: noteColor }
-      : n))
-    setDetailNote(prev => prev?.id === editNote.id
-      ? { ...prev, title: noteTitle.trim(), body: noteBody.trim(), color: noteColor }
-      : prev)
+    const updated = { ...editNote, title: noteTitle.trim(), body: noteBody.trim(), color: noteColor }
+    setNotes(prev => prev.map(n => n.id === editNote.id ? updated : n))
+    if (selectedNote?.id === editNote.id) setSelectedNote(updated)
     setEditNote(null)
   }
 
   const doDeleteNote = () => {
     setNotes(prev => prev.filter(n => n.id !== confirmDeleteNote))
-    if (detailNote?.id === confirmDeleteNote) setDetailNote(null)
+    if (selectedNote?.id === confirmDeleteNote) setSelectedNote(null)
     setConfirmDeleteNote(null)
   }
 
-  // ── filter + sort ────────────────────────────────────────────────────────
+  // ── filter + sort ─────────────────────────────────────────────────────────
   const todayStr = new Date().toISOString().split('T')[0]
 
   const sortFn = (a, b) => {
@@ -261,86 +239,52 @@ export default function App() {
   const totalPending = tasks.filter(t => !t.completed).length
   const overdue      = tasks.filter(t => !t.completed && t.dueDate && t.dueDate < todayStr).length
 
-  // ── task card ────────────────────────────────────────────────────────────
-  const TaskCard = ({ task, isDone }) => (
-    <div className={`task-item ${isDone ? 'completed' : ''}`}
-      onClick={() => setDetailTask(task)}>
-      <div className={`checkbox ${isDone ? 'checked' : ''}`}
-        onClick={e => { e.stopPropagation(); toggleTask(task.id) }}>
-        {isDone ? '✓' : ''}
-      </div>
-      <div className="task-content">
-        <div className={`task-title ${isDone ? 'done' : ''}`}>{task.title || task.text}</div>
-        {task.title && task.text && (
-          <div className={`task-desc ${isDone ? 'done' : ''}`}>{task.text}</div>
-        )}
-        <div className="task-meta">
-          <span className="priority-dot" style={{ background: PRIORITY_COLORS[task.priority] }} />
-          <span className="meta-label">{task.priority}</span>
-          <span className="meta-divider">·</span>
-          <span className="meta-label">{CATEGORIES.find(c => c.id === task.category)?.label}</span>
-          {task.dueDate && (
-            <>
-              <span className="meta-divider">·</span>
-              <span className={`meta-label due ${task.dueDate < todayStr ? 'overdue' : task.dueDate === todayStr ? 'today' : ''}`}>
-                {formatDate(task.dueDate)}
-              </span>
-            </>
-          )}
-        </div>
-      </div>
-      <div className="task-actions" onClick={e => e.stopPropagation()}>
-        {!isDone && (
-          <button className="action-btn edit-btn" onClick={() => openEditTask(task)} title="Edit">✎</button>
-        )}
-        <button className="action-btn delete-btn" onClick={() => setConfirmDeleteId(task.id)} title="Delete">🗑</button>
-      </div>
-    </div>
-  )
-
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div className="app">
+    <div className="layout">
 
-      {/* ── Top nav ── */}
-      <div className="top-nav">
-        <button className={`nav-tab ${view === 'tasks' ? 'active' : ''}`} onClick={() => setView('tasks')}>
-          ☑ Tasks
-        </button>
-        <button className={`nav-tab ${view === 'notes' ? 'active' : ''}`} onClick={() => setView('notes')}>
-          📝 Notes
-        </button>
-      </div>
+      {/* ══════════ LEFT SIDEBAR ══════════ */}
+      <aside className="sidebar">
+        {/* Nav */}
+        <div className="top-nav">
+          <button className={`nav-tab ${view === 'tasks' ? 'active' : ''}`} onClick={() => { setView('tasks'); setSelectedTask(null); setSelectedNote(null) }}>
+            ☑ Tasks
+          </button>
+          <button className={`nav-tab ${view === 'notes' ? 'active' : ''}`} onClick={() => { setView('notes'); setSelectedTask(null); setSelectedNote(null) }}>
+            📝 Notes
+          </button>
+        </div>
 
-      {/* ════════════════════ TASKS VIEW ════════════════════ */}
-      {view === 'tasks' && (
-        <>
-          <div className="header">
-            <div>
-              <h1 className="greeting">{getGreeting()} ✦</h1>
-              <p className="subtitle">
-                {totalPending === 0 ? 'All clear! Nothing pending.'
-                  : `You have ${totalPending} task${totalPending > 1 ? 's' : ''} to tackle`}
-                {overdue > 0 && <span className="overdue-count">({overdue} overdue)</span>}
-              </p>
-            </div>
-            <div className="stats-row">
-              {[{ num: totalDone, label: 'Done' }, { num: totalPending, label: 'Pending' }, { num: tasks.length, label: 'Total' }].map(({ num, label }) => (
-                <div key={label} className="stat-box">
-                  <div className="stat-num">{num}</div>
-                  <div className="stat-label">{label}</div>
-                </div>
-              ))}
-            </div>
+        {/* Greeting */}
+        <div className="sidebar-greeting">
+          <div className="greeting">{getGreeting()} ✦</div>
+          <div className="subtitle">
+            {totalPending === 0 ? 'All clear!' : `${totalPending} task${totalPending > 1 ? 's' : ''} to tackle`}
+            {overdue > 0 && <span className="overdue-count"> · {overdue} overdue</span>}
           </div>
+        </div>
 
-          <div className="toolbar">
+        {/* Stats */}
+        <div className="stats-row">
+          {[{ num: totalDone, label: 'Done' }, { num: totalPending, label: 'Left' }, { num: tasks.length, label: 'Total' }].map(({ num, label }) => (
+            <div key={label} className="stat-box">
+              <div className="stat-num">{num}</div>
+              <div className="stat-label">{label}</div>
+            </div>
+          ))}
+        </div>
+
+        {view === 'tasks' && (
+          <>
+            {/* Search */}
             <div className="search-wrap">
               <span className="search-icon">⌕</span>
-              <input className="search-input" placeholder="Search tasks..."
+              <input className="search-input" placeholder="Search..."
                 value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
               {searchQuery && <button className="clear-search" onClick={() => setSearchQuery('')}>✕</button>}
             </div>
+
+            {/* Sort */}
             <div className="sort-wrap">
               <span className="sort-icon">⇅</span>
               <select className="sort-select" value={sortBy} onChange={e => setSortBy(e.target.value)}>
@@ -349,24 +293,81 @@ export default function App() {
                 <option value="dueDate">Due date</option>
               </select>
             </div>
-          </div>
 
-          <div className="cat-row">
-            {CATEGORIES.map(c => (
-              <button key={c.id}
-                className={`cat-btn ${activeCategory === c.id ? 'active' : ''}`}
-                onClick={() => setActiveCategory(c.id)}>{c.icon} {c.label}</button>
-            ))}
-          </div>
+            {/* Categories */}
+            <div className="cat-list">
+              {CATEGORIES.map(c => (
+                <button key={c.id}
+                  className={`cat-item ${activeCategory === c.id ? 'active' : ''}`}
+                  onClick={() => setActiveCategory(c.id)}>
+                  <span className="cat-icon">{c.icon}</span>
+                  <span className="cat-label">{c.label}</span>
+                  <span className="cat-count">
+                    {c.id === 'all' ? tasks.filter(t => !t.completed).length
+                      : tasks.filter(t => t.category === c.id && !t.completed).length}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
 
-          <div className="list-area">
+        {view === 'notes' && (
+          <div className="sidebar-notes-info">
+            <div className="notes-count">{notes.length} note{notes.length !== 1 ? 's' : ''}</div>
+          </div>
+        )}
+
+        {/* Add button */}
+        <button className="sidebar-add-btn" onClick={view === 'tasks' ? openAddTask : openAddNote}>
+          + New {view === 'tasks' ? 'Task' : 'Note'}
+        </button>
+      </aside>
+
+      {/* ══════════ RIGHT PANEL ══════════ */}
+      <main className="main-panel">
+
+        {/* ── TASKS LIST ── */}
+        {view === 'tasks' && !selectedTask && (
+          <div className="task-list-panel">
+            <div className="panel-header">
+              <h2 className="panel-title">
+                {activeCategory === 'all' ? 'All Tasks' : CATEGORIES.find(c => c.id === activeCategory)?.label}
+              </h2>
+            </div>
+
             {pending.length === 0 && completed.length === 0 && (
               <div className="empty">
                 <div className="empty-icon">📋</div>
-                <p>{searchQuery ? 'No tasks match your search' : 'No tasks yet — hit + to add one!'}</p>
+                <p>{searchQuery ? 'No tasks match your search' : 'No tasks yet — click "+ New Task" to add one!'}</p>
               </div>
             )}
-            {pending.map(t => <TaskCard key={t.id} task={t} isDone={false} />)}
+
+            {/* Pending */}
+            {pending.map(task => (
+              <div key={task.id}
+                className="task-row"
+                onClick={() => setSelectedTask(task)}>
+                <div className={`checkbox ${task.completed ? 'checked' : ''}`}
+                  onClick={e => { e.stopPropagation(); toggleTask(task.id) }}>
+                  {task.completed ? '✓' : ''}
+                </div>
+                <div className="task-row-content">
+                  <span className="task-row-title">{task.title || task.text}</span>
+                  <div className="task-row-meta">
+                    <span className="priority-dot" style={{ background: PRIORITY_COLORS[task.priority] }} />
+                    {task.dueDate && (
+                      <span className={`meta-label due ${task.dueDate < todayStr ? 'overdue' : task.dueDate === todayStr ? 'today' : ''}`}>
+                        {formatDate(task.dueDate)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <span className="task-row-arrow">›</span>
+              </div>
+            ))}
+
+            {/* Completed */}
             {completed.length > 0 && (
               <>
                 <div className="section-header">
@@ -375,130 +376,121 @@ export default function App() {
                   </button>
                   <button className="clear-btn" onClick={clearCompleted}>Clear all</button>
                 </div>
-                {showCompleted && completed.map(t => <TaskCard key={t.id} task={t} isDone={true} />)}
+                {showCompleted && completed.map(task => (
+                  <div key={task.id} className="task-row completed-row"
+                    onClick={() => setSelectedTask(task)}>
+                    <div className="checkbox checked"
+                      onClick={e => { e.stopPropagation(); toggleTask(task.id) }}>✓</div>
+                    <div className="task-row-content">
+                      <span className="task-row-title done">{task.title || task.text}</span>
+                    </div>
+                    <span className="task-row-arrow">›</span>
+                  </div>
+                ))}
               </>
             )}
           </div>
-        </>
-      )}
+        )}
 
-      {/* ════════════════════ NOTES VIEW ════════════════════ */}
-      {view === 'notes' && (
-        <>
-          <div className="notes-header">
-            <h2 className="notes-heading">My Notes</h2>
-            <p className="notes-sub">{notes.length} note{notes.length !== 1 ? 's' : ''}</p>
-          </div>
-
-          {notes.length === 0 && (
-            <div className="empty">
-              <div className="empty-icon">📝</div>
-              <p>No notes yet — hit + to add a reminder!</p>
-            </div>
-          )}
-
-          <div className="notes-grid">
-            {notes.map(note => (
-              <div key={note.id} className="note-card" style={{ background: NOTE_COLORS[note.color] }}
-                onClick={() => setDetailNote(note)}>
-                <div className="note-card-title">{note.title}</div>
-                {note.body && <div className="note-card-body">{note.body}</div>}
-                <div className="note-card-footer">
-                  <span className="note-time">{timeAgo(note.createdAt)}</span>
-                  <div className="note-card-actions" onClick={e => e.stopPropagation()}>
-                    <button className="action-btn edit-btn" onClick={() => openEditNote(note)}>✎</button>
-                    <button className="action-btn delete-btn" onClick={() => setConfirmDeleteNote(note.id)}>🗑</button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-
-      {/* ── FAB ── */}
-      <button className="fab" onClick={view === 'tasks' ? openAddTask : openAddNote}>+</button>
-
-      {/* ══ TASK DETAIL MODAL ══ */}
-      {detailTask && (
-        <div className="overlay" onClick={() => setDetailTask(null)}>
-          <div className="modal detail-modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <div className="detail-badge" style={{ background: PRIORITY_COLORS[detailTask.priority] }}>
-                {detailTask.priority}
-              </div>
-              <div className="detail-header-actions">
-                <button className="action-btn edit-btn" onClick={() => { openEditTask(detailTask); setDetailTask(null) }}>✎ Edit</button>
-                <button className="action-btn delete-btn" onClick={() => { setConfirmDeleteId(detailTask.id); setDetailTask(null) }}>🗑</button>
-                <button className="modal-close" onClick={() => setDetailTask(null)}>✕</button>
+        {/* ── TASK DETAIL ── */}
+        {view === 'tasks' && selectedTask && (
+          <div className="detail-panel">
+            <div className="detail-panel-header">
+              <button className="back-btn" onClick={() => setSelectedTask(null)}>‹ Back</button>
+              <div className="detail-panel-actions">
+                <button className="action-btn edit-btn" onClick={() => { openEditTask(selectedTask); setSelectedTask(null) }}>✎ Edit</button>
+                <button className="action-btn delete-btn" onClick={() => { setConfirmDeleteId(selectedTask.id); setSelectedTask(null) }}>🗑 Delete</button>
               </div>
             </div>
 
-            <h2 className="detail-title">{detailTask.title || detailTask.text}</h2>
-            {detailTask.title && detailTask.text && (
-              <p className="detail-desc">{detailTask.text}</p>
+            <div className="detail-badge" style={{ background: PRIORITY_COLORS[selectedTask.priority] }}>
+              {selectedTask.priority}
+            </div>
+
+            <h1 className="detail-title">{selectedTask.title || selectedTask.text}</h1>
+
+            {selectedTask.title && selectedTask.text && (
+              <p className="detail-desc">{selectedTask.text}</p>
             )}
 
             <div className="detail-meta-grid">
               <div className="detail-meta-item">
                 <span className="detail-meta-label">Category</span>
                 <span className="detail-meta-value">
-                  {CATEGORIES.find(c => c.id === detailTask.category)?.icon}{' '}
-                  {CATEGORIES.find(c => c.id === detailTask.category)?.label}
-                </span>
-              </div>
-              <div className="detail-meta-item">
-                <span className="detail-meta-label">Priority</span>
-                <span className="detail-meta-value" style={{ color: PRIORITY_COLORS[detailTask.priority] }}>
-                  {detailTask.priority}
+                  {CATEGORIES.find(c => c.id === selectedTask.category)?.icon} {CATEGORIES.find(c => c.id === selectedTask.category)?.label}
                 </span>
               </div>
               <div className="detail-meta-item">
                 <span className="detail-meta-label">Status</span>
-                <span className="detail-meta-value">{detailTask.completed ? '✓ Completed' : '○ Pending'}</span>
+                <span className="detail-meta-value">{selectedTask.completed ? '✓ Done' : '○ Pending'}</span>
               </div>
-              {detailTask.dueDate && (
+              {selectedTask.dueDate && (
                 <div className="detail-meta-item">
                   <span className="detail-meta-label">Due date</span>
-                  <span className={`detail-meta-value ${detailTask.dueDate < todayStr ? 'overdue' : detailTask.dueDate === todayStr ? 'today' : ''}`}>
-                    {formatDate(detailTask.dueDate)}
+                  <span className={`detail-meta-value ${selectedTask.dueDate < todayStr ? 'overdue' : selectedTask.dueDate === todayStr ? 'today' : ''}`}>
+                    {formatDate(selectedTask.dueDate)}
                   </span>
                 </div>
               )}
               <div className="detail-meta-item">
-                <span className="detail-meta-label">Created</span>
-                <span className="detail-meta-value">{timeAgo(detailTask.createdAt)}</span>
+                <span className="detail-meta-label">Added</span>
+                <span className="detail-meta-value">{timeAgo(selectedTask.createdAt)}</span>
               </div>
             </div>
 
             <button className="submit-btn"
-              style={{ background: detailTask.completed ? 'rgba(255,255,255,0.06)' : '#7b6ff0', marginTop: 20 }}
-              onClick={() => { toggleTask(detailTask.id); setDetailTask(null) }}>
-              {detailTask.completed ? 'Mark as Pending' : '✓ Mark as Complete'}
+              style={{ background: selectedTask.completed ? 'rgba(255,255,255,0.06)' : '#7b6ff0', marginTop: 24 }}
+              onClick={() => toggleTask(selectedTask.id)}>
+              {selectedTask.completed ? 'Mark as Pending' : '✓ Mark as Complete'}
             </button>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* ══ NOTE DETAIL MODAL ══ */}
-      {detailNote && (
-        <div className="overlay" onClick={() => setDetailNote(null)}>
-          <div className="modal note-detail-modal" style={{ background: NOTE_COLORS[detailNote.color] }}
-            onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <span className="note-detail-tag">📝 Note</span>
-              <div className="detail-header-actions">
-                <button className="action-btn edit-btn" onClick={() => { openEditNote(detailNote); setDetailNote(null) }}>✎ Edit</button>
-                <button className="action-btn delete-btn" onClick={() => { setConfirmDeleteNote(detailNote.id); setDetailNote(null) }}>🗑</button>
-                <button className="modal-close" onClick={() => setDetailNote(null)}>✕</button>
+        {/* ── NOTES GRID ── */}
+        {view === 'notes' && !selectedNote && (
+          <div className="task-list-panel">
+            <div className="panel-header">
+              <h2 className="panel-title">My Notes</h2>
+            </div>
+
+            {notes.length === 0 && (
+              <div className="empty">
+                <div className="empty-icon">📝</div>
+                <p>No notes yet — click "+ New Note" to add a reminder!</p>
+              </div>
+            )}
+
+            {notes.map(note => (
+              <div key={note.id} className="note-row" style={{ borderLeftColor: NOTE_COLORS[note.color] }}
+                onClick={() => setSelectedNote(note)}>
+                <div className="note-row-dot" style={{ background: NOTE_COLORS[note.color] }} />
+                <div className="task-row-content">
+                  <span className="task-row-title">{note.title}</span>
+                  {note.body && <span className="note-row-preview">{note.body}</span>}
+                </div>
+                <span className="task-row-arrow">›</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ── NOTE DETAIL ── */}
+        {view === 'notes' && selectedNote && (
+          <div className="detail-panel" style={{ background: NOTE_COLORS[selectedNote.color] }}>
+            <div className="detail-panel-header">
+              <button className="back-btn" onClick={() => setSelectedNote(null)}>‹ Back</button>
+              <div className="detail-panel-actions">
+                <button className="action-btn edit-btn" onClick={() => { openEditNote(selectedNote); setSelectedNote(null) }}>✎ Edit</button>
+                <button className="action-btn delete-btn" onClick={() => { setConfirmDeleteNote(selectedNote.id); setSelectedNote(null) }}>🗑 Delete</button>
               </div>
             </div>
-            <h2 className="detail-title">{detailNote.title}</h2>
-            {detailNote.body && <p className="note-detail-body">{detailNote.body}</p>}
-            <p className="note-detail-time">Added {timeAgo(detailNote.createdAt)}</p>
+            <span className="note-detail-tag">📝 Note</span>
+            <h1 className="detail-title" style={{ marginTop: 12 }}>{selectedNote.title}</h1>
+            {selectedNote.body && <p className="note-detail-body">{selectedNote.body}</p>}
+            <p className="note-detail-time">Added {timeAgo(selectedNote.createdAt)}</p>
           </div>
-        </div>
-      )}
+        )}
+      </main>
 
       {/* ══ ADD TASK MODAL ══ */}
       {showAddTask && (
@@ -541,16 +533,14 @@ export default function App() {
               <button className="modal-close" onClick={() => setShowAddNote(false)}>✕</button>
             </div>
             <input ref={noteTitleRef} className="task-input" placeholder="Note title *"
-              value={noteTitle} onChange={e => setNoteTitle(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && addNote()} />
+              value={noteTitle} onChange={e => setNoteTitle(e.target.value)} />
             <textarea className="note-textarea" placeholder="Write your reminder here..."
               value={noteBody} onChange={e => setNoteBody(e.target.value)} rows={5} />
             <label className="form-label">Color</label>
             <div className="color-row">
               {NOTE_COLORS.map((c, i) => (
                 <button key={i} className={`color-dot ${noteColor === i ? 'color-dot-active' : ''}`}
-                  style={{ background: c }} onClick={() => setNoteColor(i)}
-                  title={NOTE_COLOR_LABELS[i]} />
+                  style={{ background: c }} onClick={() => setNoteColor(i)} />
               ))}
             </div>
             <button className="submit-btn" onClick={addNote}>Add Note</button>
@@ -582,7 +572,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ══ DELETE CONFIRM (tasks) ══ */}
+      {/* ══ DELETE CONFIRM (task) ══ */}
       {confirmDeleteId && (
         <div className="overlay" onClick={() => setConfirmDeleteId(null)}>
           <div className="modal confirm-modal" onClick={e => e.stopPropagation()}>
@@ -597,7 +587,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ══ DELETE CONFIRM (notes) ══ */}
+      {/* ══ DELETE CONFIRM (note) ══ */}
       {confirmDeleteNote && (
         <div className="overlay" onClick={() => setConfirmDeleteNote(null)}>
           <div className="modal confirm-modal" onClick={e => e.stopPropagation()}>
