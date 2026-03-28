@@ -1,15 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
+import { supabase } from './supabase'
 import './App.css'
 
-const TASK_KEY = 'task-checker-data'
-const NOTE_KEY = 'task-checker-notes'
-
 const CATEGORIES = [
-  { id: 'all', label: 'All', icon: '◉' },
-  { id: 'work', label: 'Work', icon: '⚡' },
+  { id: 'all',      label: 'All',      icon: '◉' },
+  { id: 'work',     label: 'Work',     icon: '⚡' },
   { id: 'personal', label: 'Personal', icon: '☀' },
-  { id: 'habit', label: 'Habits', icon: '♻' },
-  { id: 'urgent', label: 'Urgent', icon: '🔺' },
+  { id: 'habit',    label: 'Habits',   icon: '♻' },
+  { id: 'urgent',   label: 'Urgent',   icon: '🔺' },
 ]
 
 const PRIORITY_COLORS = { low: '#6ec47e', medium: '#e8b84a', high: '#e85d5d' }
@@ -47,6 +45,52 @@ function getGreeting() {
   if (h < 12) return 'Good morning'
   if (h < 17) return 'Good afternoon'
   return 'Good evening'
+}
+
+const dbToTask = row => ({
+  id: row.id,
+  title: row.title,
+  text: row.text || '',
+  completed: row.completed,
+  priority: row.priority,
+  category: row.category,
+  dueDate: row.due_date,
+  createdAt: row.created_at,
+})
+
+const dbToNote = row => ({
+  id: row.id,
+  title: row.title,
+  body: row.body || '',
+  color: row.color,
+  createdAt: row.created_at,
+})
+
+function GoogleIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" style={{ flexShrink: 0 }}>
+      <path fill="#4285F4" d="M16.51 8H8.98v3h4.3c-.18 1-.74 1.48-1.6 2.04v2.01h2.6a7.8 7.8 0 0 0 2.38-5.88c0-.57-.05-.66-.15-1.18z"/>
+      <path fill="#34A853" d="M8.98 17c2.16 0 3.97-.72 5.3-1.94l-2.6-2a4.8 4.8 0 0 1-7.18-2.54H1.83v2.07A8 8 0 0 0 8.98 17z"/>
+      <path fill="#FBBC05" d="M4.5 10.52a4.8 4.8 0 0 1 0-3.04V5.41H1.83a8 8 0 0 0 0 7.18l2.67-2.07z"/>
+      <path fill="#EA4335" d="M8.98 4.18c1.17 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 0 0 1.83 5.4L4.5 7.49a4.77 4.77 0 0 1 4.48-3.3z"/>
+    </svg>
+  )
+}
+
+function LoginScreen({ onLogin }) {
+  return (
+    <div className="login-screen">
+      <div className="login-card">
+        <div className="login-logo">✦</div>
+        <h1 className="login-title">Task Manager</h1>
+        <p className="login-sub">Sign in to sync your tasks across all your devices</p>
+        <button className="google-btn" onClick={onLogin}>
+          <GoogleIcon />
+          Continue with Google
+        </button>
+      </div>
+    </div>
+  )
 }
 
 function TaskForm({ title, setTitle, desc, setDesc, priority, setPriority,
@@ -88,19 +132,21 @@ function TaskForm({ title, setTitle, desc, setDesc, priority, setPriority,
 }
 
 export default function App() {
+  const [user, setUser]             = useState(null)
+  const [authLoading, setAuthLoading] = useState(true)
+  const [dataLoading, setDataLoading] = useState(false)
+
   const [view, setView] = useState('tasks')
 
   // tasks
-  const [tasks, setTasks] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(TASK_KEY)) || [] } catch { return [] }
-  })
-  const [activeCategory, setActiveCategory] = useState('all')
-  const [searchQuery, setSearchQuery]     = useState('')
-  const [showCompleted, setShowCompleted] = useState(true)
-  const [sortBy, setSortBy]               = useState('created')
-  const [selectedTask, setSelectedTask]   = useState(null)   // shown in right panel
-  const [showAddTask, setShowAddTask]     = useState(false)
-  const [editTask, setEditTask]           = useState(null)
+  const [tasks, setTasks]                     = useState([])
+  const [activeCategory, setActiveCategory]   = useState('all')
+  const [searchQuery, setSearchQuery]         = useState('')
+  const [showCompleted, setShowCompleted]     = useState(true)
+  const [sortBy, setSortBy]                   = useState('created')
+  const [selectedTask, setSelectedTask]       = useState(null)
+  const [showAddTask, setShowAddTask]         = useState(false)
+  const [editTask, setEditTask]               = useState(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState(null)
 
   const [newTitle, setNewTitle]       = useState('')
@@ -119,32 +165,67 @@ export default function App() {
   const editTitleRef = useRef(null)
 
   // notes
-  const [notes, setNotes] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(NOTE_KEY)) || [] } catch { return [] }
-  })
-  const [showAddNote, setShowAddNote]       = useState(false)
-  const [editNote, setEditNote]             = useState(null)
-  const [selectedNote, setSelectedNote]     = useState(null)
+  const [notes, setNotes]                         = useState([])
+  const [showAddNote, setShowAddNote]             = useState(false)
+  const [editNote, setEditNote]                   = useState(null)
+  const [selectedNote, setSelectedNote]           = useState(null)
   const [confirmDeleteNote, setConfirmDeleteNote] = useState(null)
   const [noteTitle, setNoteTitle] = useState('')
   const [noteBody, setNoteBody]   = useState('')
   const [noteColor, setNoteColor] = useState(0)
   const noteTitleRef = useRef(null)
 
-  useEffect(() => { localStorage.setItem(TASK_KEY, JSON.stringify(tasks)) }, [tasks])
-  useEffect(() => { localStorage.setItem(NOTE_KEY, JSON.stringify(notes)) }, [notes])
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null)
+      setAuthLoading(false)
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null)
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  useEffect(() => {
+    if (!user) { setTasks([]); setNotes([]); return }
+    loadData()
+  }, [user])
+
+  const loadData = async () => {
+    setDataLoading(true)
+    const [{ data: tasksData }, { data: notesData }] = await Promise.all([
+      supabase.from('tasks').select('*').order('created_at', { ascending: false }),
+      supabase.from('notes').select('*').order('created_at', { ascending: false }),
+    ])
+    setTasks(tasksData?.map(dbToTask) || [])
+    setNotes(notesData?.map(dbToNote) || [])
+    setDataLoading(false)
+  }
+
+  const signInWithGoogle = () => {
+    supabase.auth.signInWithOAuth({ provider: 'google' })
+  }
+
+  const signOut = () => {
+    supabase.auth.signOut()
+  }
+
+  // ── focus effects ─────────────────────────────────────────────────────────
   useEffect(() => { if (showAddTask  && addTitleRef.current)  addTitleRef.current.focus()  }, [showAddTask])
   useEffect(() => { if (editTask     && editTitleRef.current) editTitleRef.current.focus() }, [editTask])
   useEffect(() => { if (showAddNote  && noteTitleRef.current) noteTitleRef.current.focus() }, [showAddNote])
 
-  // ── task actions ─────────────────────────────────────────────────────────
+  // ── task actions ──────────────────────────────────────────────────────────
   const openAddTask = () => {
     setNewTitle(''); setNewDesc(''); setNewPriority('medium')
     setNewCategory('work'); setNewDueDate('')
     setShowAddTask(true)
   }
 
-  const addTask = () => {
+  const addTask = async () => {
     if (!newTitle.trim()) return
     const t = {
       id: generateId(), title: newTitle.trim(), text: newDesc.trim(),
@@ -153,6 +234,11 @@ export default function App() {
     }
     setTasks(prev => [t, ...prev])
     setShowAddTask(false)
+    await supabase.from('tasks').insert({
+      id: t.id, user_id: user.id, title: t.title, text: t.text,
+      completed: t.completed, priority: t.priority, category: t.category,
+      due_date: t.dueDate, created_at: t.createdAt,
+    })
   }
 
   const openEditTask = task => {
@@ -164,52 +250,79 @@ export default function App() {
     setEditDueDate(task.dueDate || '')
   }
 
-  const saveEditTask = () => {
+  const saveEditTask = async () => {
     if (!editTitle.trim()) return
     const updated = { ...editTask, title: editTitle.trim(), text: editDesc.trim(),
       priority: editPriority, category: editCategory, dueDate: editDueDate || null }
     setTasks(prev => prev.map(t => t.id === editTask.id ? updated : t))
     if (selectedTask?.id === editTask.id) setSelectedTask(updated)
+    const id = editTask.id
     setEditTask(null)
+    await supabase.from('tasks').update({
+      title: updated.title, text: updated.text, priority: updated.priority,
+      category: updated.category, due_date: updated.dueDate,
+    }).eq('id', id)
   }
 
-  const toggleTask = id => {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, completed: !t.completed } : t))
-    if (selectedTask?.id === id) setSelectedTask(prev => ({ ...prev, completed: !prev.completed }))
+  const toggleTask = async id => {
+    const task = tasks.find(t => t.id === id)
+    const newCompleted = !task.completed
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, completed: newCompleted } : t))
+    if (selectedTask?.id === id) setSelectedTask(prev => ({ ...prev, completed: newCompleted }))
+    await supabase.from('tasks').update({ completed: newCompleted }).eq('id', id)
   }
 
-  const doDeleteTask = () => {
-    setTasks(prev => prev.filter(t => t.id !== confirmDeleteId))
-    if (selectedTask?.id === confirmDeleteId) setSelectedTask(null)
+  const doDeleteTask = async () => {
+    const id = confirmDeleteId
+    setTasks(prev => prev.filter(t => t.id !== id))
+    if (selectedTask?.id === id) setSelectedTask(null)
     setConfirmDeleteId(null)
+    await supabase.from('tasks').delete().eq('id', id)
   }
 
-  const clearCompleted = () => setTasks(prev => prev.filter(t => !t.completed))
+  const clearCompleted = async () => {
+    const ids = tasks.filter(t => t.completed).map(t => t.id)
+    setTasks(prev => prev.filter(t => !t.completed))
+    await supabase.from('tasks').delete().in('id', ids)
+  }
 
-  // ── note actions ─────────────────────────────────────────────────────────
+  // ── note actions ──────────────────────────────────────────────────────────
   const openAddNote = () => { setNoteTitle(''); setNoteBody(''); setNoteColor(0); setShowAddNote(true) }
 
-  const addNote = () => {
+  const addNote = async () => {
     if (!noteTitle.trim()) return
-    setNotes(prev => [{ id: generateId(), title: noteTitle.trim(), body: noteBody.trim(),
-      color: noteColor, createdAt: new Date().toISOString() }, ...prev])
+    const n = {
+      id: generateId(), title: noteTitle.trim(), body: noteBody.trim(),
+      color: noteColor, createdAt: new Date().toISOString(),
+    }
+    setNotes(prev => [n, ...prev])
     setShowAddNote(false)
+    await supabase.from('notes').insert({
+      id: n.id, user_id: user.id, title: n.title, body: n.body,
+      color: n.color, created_at: n.createdAt,
+    })
   }
 
   const openEditNote = note => { setEditNote(note); setNoteTitle(note.title); setNoteBody(note.body); setNoteColor(note.color) }
 
-  const saveEditNote = () => {
+  const saveEditNote = async () => {
     if (!noteTitle.trim()) return
     const updated = { ...editNote, title: noteTitle.trim(), body: noteBody.trim(), color: noteColor }
     setNotes(prev => prev.map(n => n.id === editNote.id ? updated : n))
     if (selectedNote?.id === editNote.id) setSelectedNote(updated)
+    const id = editNote.id
     setEditNote(null)
+    await supabase.from('notes').update({
+      title: updated.title, body: updated.body, color: updated.color,
+    }).eq('id', id)
   }
 
-  const doDeleteNote = () => {
-    setNotes(prev => prev.filter(n => n.id !== confirmDeleteNote))
-    if (selectedNote?.id === confirmDeleteNote) setSelectedNote(null)
+  const doDeleteNote = async () => {
+    const id = confirmDeleteNote
+    setNotes(prev => prev.filter(n => n.id !== id))
+    if (selectedNote?.id === id) setSelectedNote(null)
     setConfirmDeleteNote(null)
+    await supabase.from('notes').delete().eq('id', id)
   }
 
   // ── filter + sort ─────────────────────────────────────────────────────────
@@ -239,6 +352,17 @@ export default function App() {
   const totalPending = tasks.filter(t => !t.completed).length
   const overdue      = tasks.filter(t => !t.completed && t.dueDate && t.dueDate < todayStr).length
 
+  // ── render guards ─────────────────────────────────────────────────────────
+  if (authLoading) {
+    return (
+      <div className="auth-loading">
+        <div className="auth-loading-dot" />
+      </div>
+    )
+  }
+
+  if (!user) return <LoginScreen onLogin={signInWithGoogle} />
+
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <div className="layout">
@@ -253,6 +377,18 @@ export default function App() {
           <button className={`nav-tab ${view === 'notes' ? 'active' : ''}`} onClick={() => { setView('notes'); setSelectedTask(null); setSelectedNote(null) }}>
             📝 Notes
           </button>
+        </div>
+
+        {/* User info */}
+        <div className="user-row">
+          {user.user_metadata?.avatar_url
+            ? <img className="user-avatar" src={user.user_metadata.avatar_url} alt="" referrerPolicy="no-referrer" />
+            : <div className="user-avatar-placeholder">{(user.email || 'U')[0].toUpperCase()}</div>
+          }
+          <div className="user-info">
+            <div className="user-name">{user.user_metadata?.full_name || user.email}</div>
+            <button className="sign-out-btn" onClick={signOut}>Sign out</button>
+          </div>
         </div>
 
         {/* Greeting */}
@@ -327,6 +463,13 @@ export default function App() {
       {/* ══════════ RIGHT PANEL ══════════ */}
       <main className="main-panel">
 
+        {/* data loading overlay */}
+        {dataLoading && (
+          <div className="data-loading">
+            <div className="auth-loading-dot" />
+          </div>
+        )}
+
         {/* ── TASKS LIST ── */}
         {view === 'tasks' && !selectedTask && (
           <div className="task-list-panel">
@@ -336,7 +479,7 @@ export default function App() {
               </h2>
             </div>
 
-            {pending.length === 0 && completed.length === 0 && (
+            {pending.length === 0 && completed.length === 0 && !dataLoading && (
               <div className="empty">
                 <div className="empty-icon">📋</div>
                 <p>{searchQuery ? 'No tasks match your search' : 'No tasks yet — click "+ New Task" to add one!'}</p>
@@ -345,9 +488,7 @@ export default function App() {
 
             {/* Pending */}
             {pending.map(task => (
-              <div key={task.id}
-                className="task-row"
-                onClick={() => setSelectedTask(task)}>
+              <div key={task.id} className="task-row" onClick={() => setSelectedTask(task)}>
                 <div className={`checkbox ${task.completed ? 'checked' : ''}`}
                   onClick={e => { e.stopPropagation(); toggleTask(task.id) }}>
                   {task.completed ? '✓' : ''}
@@ -377,10 +518,8 @@ export default function App() {
                   <button className="clear-btn" onClick={clearCompleted}>Clear all</button>
                 </div>
                 {showCompleted && completed.map(task => (
-                  <div key={task.id} className="task-row completed-row"
-                    onClick={() => setSelectedTask(task)}>
-                    <div className="checkbox checked"
-                      onClick={e => { e.stopPropagation(); toggleTask(task.id) }}>✓</div>
+                  <div key={task.id} className="task-row completed-row" onClick={() => setSelectedTask(task)}>
+                    <div className="checkbox checked" onClick={e => { e.stopPropagation(); toggleTask(task.id) }}>✓</div>
                     <div className="task-row-content">
                       <span className="task-row-title done">{task.title || task.text}</span>
                     </div>
@@ -453,7 +592,7 @@ export default function App() {
               <h2 className="panel-title">My Notes</h2>
             </div>
 
-            {notes.length === 0 && (
+            {notes.length === 0 && !dataLoading && (
               <div className="empty">
                 <div className="empty-icon">📝</div>
                 <p>No notes yet — click "+ New Note" to add a reminder!</p>
