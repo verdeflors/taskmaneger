@@ -1,18 +1,19 @@
 {
   "name": "taskmaneger",
+  "private": true,
   "version": "1.0.0",
-  "main": "index.js",
+  "type": "module",
   "scripts": {
-    "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "dependencies": {
-    "expo": "55.0.10-canary-20260327-0789fbc",
-    "expo-status-bar": "55.0.5-canary-20260327-0789fbc",
-    "react": "19.2.0",
-    "react-native": "0.83.4"
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
   },
-  "private": true
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.1.1",
+    "vite": "^6.0.0"
+  }
 }

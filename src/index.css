@@ -1,0 +1,7 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #111118;
+  color: #e8e8ef;
+  min-height: 100vh;
+}
